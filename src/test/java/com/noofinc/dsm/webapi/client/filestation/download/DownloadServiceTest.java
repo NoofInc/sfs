@@ -1,6 +1,7 @@
 package com.noofinc.dsm.webapi.client.filestation.download;
 
 import com.noofinc.dsm.webapi.client.AbstractTest;
+import com.noofinc.dsm.webapi.client.filestation.common.DownloadMode;
 import com.noofinc.dsm.webapi.client.filestation.exception.FileNotFoundException;
 
 import org.apache.commons.io.IOUtils;
@@ -8,6 +9,7 @@ import org.junit.Assert;
 import org.junit.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StreamUtils;
 
@@ -23,6 +25,45 @@ public class DownloadServiceTest extends AbstractTest {
         ResponseEntity<Resource> download = downloadService.download("/noofinc-ws-it/test-1/test-text-file2.txt");
 
         Assert.assertEquals("This is a test file", IOUtils.toString(download.getBody().getInputStream()));
+    }
+
+    @Test
+    public void testDownloadTextFileDownloadMode() throws IOException {
+        ResponseEntity<Resource> download = downloadService.download(
+            DownloadRequest.createBuilder()
+                .addPath("/noofinc-ws-it/test-1/test-text-file2.txt")
+                .downloadMode(DownloadMode.DOWNLOAD)
+                .build()
+        );
+
+        Assert.assertEquals(MediaType.APPLICATION_OCTET_STREAM, download.getHeaders().getContentType());
+        Assert.assertEquals("This is a test file", IOUtils.toString(download.getBody().getInputStream()));
+    }
+
+    @Test
+    public void testDownloadTextFileOpenMode() throws IOException {
+        ResponseEntity<Resource> download = downloadService.download(
+            DownloadRequest.createBuilder()
+                .addPath("/noofinc-ws-it/test-1/test-text-file2.txt")
+                .downloadMode(DownloadMode.OPEN)
+                .build()
+        );
+
+        Assert.assertEquals(MediaType.TEXT_PLAIN, download.getHeaders().getContentType());
+        Assert.assertEquals("This is a test file", IOUtils.toString(download.getBody().getInputStream()));
+    }
+    
+    @Test
+    public void testDownloadMultipleFiles() throws IOException {
+        ResponseEntity<Resource> download = downloadService.download(
+            DownloadRequest.createBuilder()
+                .addPath("/noofinc-ws-it/test-1/test-text-file2.txt")
+                .addPath("/noofinc-ws-it/test-1/test-sub-directory/test-text-file3.txt")
+                .build()
+        );
+
+        Assert.assertEquals("application/zip", download.getHeaders().getContentType().toString());
+        Assert.assertEquals(462, download.getBody().contentLength());
     }
 
     @Test

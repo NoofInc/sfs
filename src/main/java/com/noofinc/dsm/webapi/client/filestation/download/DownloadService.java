@@ -6,4 +6,6 @@ import org.springframework.http.ResponseEntity;
 public interface DownloadService {
 
     ResponseEntity<Resource> download(String path);
+
+    ResponseEntity<Resource> download(DownloadRequest downloadRequest);
 }

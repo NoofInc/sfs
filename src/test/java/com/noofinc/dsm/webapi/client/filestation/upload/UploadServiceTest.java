@@ -181,38 +181,4 @@ public class UploadServiceTest extends AbstractTest {
                 .build();
         uploadService.uploadFile(secondUploadRequest);
     }
-
-    @Test
-    public void testFtpUpload() {
-        InputStream file = classLoader.getResourceAsStream("file-resources/upload-test/test-file.txt");
-
-        uploadService.uploadFtpFile("/noofinc-ws-it", fileName, file);
-
-        File f = new File(getShareMountPoint() + "/" + fileName);
-        int seconds = 0;
-        //check for existence up to 10 sec
-        while (!f.exists()  && seconds < 10) {
-            try { Thread.sleep(1000L); } catch (InterruptedException e) { }
-            seconds++;
-        }
-        assertTrue(f.exists());
-        assertFalse(f.isDirectory());
-    }
-
-    @Test
-    public void testUploadFileWithFtpFailOver() {
-        InputStream file = classLoader.getResourceAsStream("file-resources/upload-test/test-file.txt");
-
-        uploadService.uploadFileWithFtpFailOver("/noofinc-ws-it", fileName, file);
-
-        File f = new File(getShareMountPoint() + "/" + fileName);
-        int seconds = 0;
-        //check for existence up to 10 sec
-        while (!f.exists()  && seconds < 10) {
-            try { Thread.sleep(1000L); } catch (InterruptedException e) { }
-            seconds++;
-        }
-        assertTrue(f.exists());
-        assertFalse(f.isDirectory());
-    }
 }

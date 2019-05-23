@@ -8,7 +8,4 @@ public interface UploadService {
 
     void uploadFile(UploadRequest uploadRequest);
 
-    void uploadFtpFile(String parentPath, String name, InputStream content);
-
-    void uploadFileWithFtpFailOver(String parentPath, String name, InputStream content);
 }
