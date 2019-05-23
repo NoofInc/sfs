@@ -16,8 +16,8 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.BufferingClientHttpRequestFactory;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
-import org.springframework.http.converter.ByteArrayHttpMessageConverter;
 import org.springframework.http.converter.FormHttpMessageConverter;
+import org.springframework.http.converter.ResourceHttpMessageConverter;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.web.client.RestTemplate;
 
@@ -50,10 +50,11 @@ public class DsmWebapiClientConfig {
     @Bean
     public RestTemplate downloadRestTemplate() {
         RestTemplate restTemplate = new RestTemplate();
-        ByteArrayHttpMessageConverter byteArrayHttpMessageConverter = new ByteArrayHttpMessageConverter();
-        restTemplate.setMessageConverters(Collections.singletonList(byteArrayHttpMessageConverter));
-        restTemplate.setInterceptors(Collections.singletonList(new LoggingInterceptor()));
-        restTemplate.setRequestFactory(new BufferingClientHttpRequestFactory(new SimpleClientHttpRequestFactory()));
+        ResourceHttpMessageConverter resourceHttpMessageConverter = new ResourceHttpMessageConverter();
+        restTemplate.setMessageConverters(Collections.singletonList(resourceHttpMessageConverter));
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setBufferRequestBody(false);
+        restTemplate.setRequestFactory(factory);
         return restTemplate;
     }
 
