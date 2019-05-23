@@ -15,9 +15,9 @@ public class DirSizeServiceImplTest extends AbstractTest {
     public void testSynchronousDirSize() throws Exception {
         DirSizeResult dirSizeResult = dirSizeService.synchronousDirSize("/noofinc-ws-it/");
         Assert.assertEquals(true, dirSizeResult.isFinished());
-        Assert.assertEquals(3, dirSizeResult.getNumberOfDirectories());
-        Assert.assertEquals(5, dirSizeResult.getNumberOfFiles());
-        Assert.assertEquals(147743L, dirSizeResult.getTotalByteSize());
+        Assert.assertEquals(4, dirSizeResult.getNumberOfDirectories());
+        Assert.assertEquals(7, dirSizeResult.getNumberOfFiles());
+        Assert.assertEquals(147844L, dirSizeResult.getTotalByteSize());
     }
 
     @Test

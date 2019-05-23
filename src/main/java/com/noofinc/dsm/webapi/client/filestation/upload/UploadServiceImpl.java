@@ -1,34 +1,43 @@
 package com.noofinc.dsm.webapi.client.filestation.upload;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.noofinc.dsm.webapi.client.core.DsmWebapiResponse;
-import com.noofinc.dsm.webapi.client.core.authentication.AuthenticationHolder;
-import com.noofinc.dsm.webapi.client.filestation.exception.FileAlreadyExistsException;
-import com.noofinc.dsm.webapi.client.filestation.exception.FileNotFoundException;
-import com.noofinc.dsm.webapi.client.core.AbstractDsmServiceImpl;
-import com.noofinc.dsm.webapi.client.core.DsmUrlProvider;
-import com.noofinc.dsm.webapi.client.core.exception.DsmWebApiClientException;
-import com.noofinc.dsm.webapi.client.filestation.common.OverwriteBehavior;
-import com.noofinc.dsm.webapi.client.core.timezone.TimeZoneUtil;
-import org.apache.commons.net.ftp.FTP;
-import org.apache.commons.net.ftp.FTPClient;
-import org.apache.http.client.fluent.Content;
-import org.apache.http.client.fluent.Request;
-import org.apache.http.client.fluent.Response;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
-import org.springframework.web.util.UriComponentsBuilder;
-
-import javax.annotation.PostConstruct;
-import javax.annotation.PreDestroy;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.LocalDateTime;
 import java.util.Optional;
+
+import javax.annotation.PostConstruct;
+import javax.annotation.PreDestroy;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.noofinc.dsm.webapi.client.core.AbstractDsmServiceImpl;
+import com.noofinc.dsm.webapi.client.core.DsmUrlProvider;
+import com.noofinc.dsm.webapi.client.core.DsmWebapiResponse;
+import com.noofinc.dsm.webapi.client.core.authentication.AuthenticationHolder;
+import com.noofinc.dsm.webapi.client.core.exception.DsmWebApiClientException;
+import com.noofinc.dsm.webapi.client.core.timezone.TimeZoneUtil;
+import com.noofinc.dsm.webapi.client.filestation.common.OverwriteBehavior;
+import com.noofinc.dsm.webapi.client.filestation.exception.FileAlreadyExistsException;
+import com.noofinc.dsm.webapi.client.filestation.exception.FileNotFoundException;
+
+import org.apache.commons.net.ftp.FTP;
+import org.apache.commons.net.ftp.FTPClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Component;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 
 /**
  * Could not succeed to implement this with RestTemplate
@@ -40,9 +49,6 @@ public class UploadServiceImpl extends AbstractDsmServiceImpl implements UploadS
     private static final Logger LOGGER = LoggerFactory.getLogger(UploadServiceImpl.class);
 
     private static final String API_ID = "SYNO.FileStation.Upload";
-
-    private static final String DELIMITER = "--AaB03x";
-    private static final String CRLF = "\r\n";
 
     @Value("${dsm.webapi.username}")
     private String username;
@@ -62,6 +68,10 @@ public class UploadServiceImpl extends AbstractDsmServiceImpl implements UploadS
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    @Qualifier("uploadRestTemplate")
+    private RestTemplate restTemplate;
 
     FTPClient ftp = new FTPClient();
 
@@ -92,7 +102,7 @@ public class UploadServiceImpl extends AbstractDsmServiceImpl implements UploadS
     }
 
     @Override
-    public void uploadFile(String parentPath, String name, byte[] content) {
+    public void uploadFile(String parentPath, String name, InputStream content) {
         uploadFile(UploadRequest.createBuilder(parentPath, name, content).build());
     }
 
@@ -114,10 +124,9 @@ public class UploadServiceImpl extends AbstractDsmServiceImpl implements UploadS
 
 
     @Override
-    public void uploadFtpFile(String parentPath, String name, byte[] content) {
+    public void uploadFtpFile(String parentPath, String name, InputStream content) {
         try {
-            InputStream is = new ByteArrayInputStream(content);
-            ftp.storeFile("/" + parentPath + "/" + name, is);
+            ftp.storeFile("/" + parentPath + "/" + name, content);
 
         } catch (IOException e) {
             throw new DsmWebApiClientException("Unable to upload file via FTP", e);
@@ -125,7 +134,7 @@ public class UploadServiceImpl extends AbstractDsmServiceImpl implements UploadS
     }
 
     @Override
-    public void uploadFileWithFtpFailOver(String parentPath, String name, byte[] content) {
+    public void uploadFileWithFtpFailOver(String parentPath, String name, InputStream content) {
         try {
             uploadFile(parentPath, name, content);
         } catch (Exception e) {
@@ -135,18 +144,27 @@ public class UploadServiceImpl extends AbstractDsmServiceImpl implements UploadS
     }
 
     private DsmWebapiResponse doUploadRequest(UploadRequest uploadRequest) {
-        try {
-            String request = createRequest(uploadRequest);
-            LOGGER.debug("Upload Request Body: \n{}", request);
+        try {            
+            Resource content = new InputStreamResource(uploadRequest.getContent());
+            HttpHeaders fileHeaders = new HttpHeaders();
+            fileHeaders.setContentDispositionFormData("file", uploadRequest.getFileName());
 
-            Response response = Request.Put(createUrl(uploadRequest))
-                    .addHeader("Content-type", String.format("multipart/form-data, boundary=%s", DELIMITER.substring(2)))
-                    .bodyByteArray(request.getBytes())
-                    .execute();
-                Content content = response.returnContent();
-                LOGGER.debug("Response body: {}", content.asString());
-                return objectMapper.readValue(content.asBytes(), DsmWebapiResponse.class);
-        } catch (IOException e) {
+            HttpEntity<Resource> fileEntity = new HttpEntity<>(content, fileHeaders);
+
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            body.add("file", fileEntity);
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+            HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+
+            ResponseEntity<DsmWebapiResponse> response = restTemplate.exchange(createUrl(uploadRequest), HttpMethod.PUT, requestEntity, DsmWebapiResponse.class);
+            
+            LOGGER.debug("Response body: {}", objectMapper.writeValueAsString(response.getBody()));
+
+            return response.getBody();
+
+        } catch (Exception e) {
             throw new DsmWebApiClientException("Could not upload file.", e);
         }
     }
@@ -173,12 +191,6 @@ public class UploadServiceImpl extends AbstractDsmServiceImpl implements UploadS
         return url;
     }
 
-    private String createRequest(UploadRequest uploadRequest) {
-        StringBuilder request = new StringBuilder();
-        appendFileParameter(request, uploadRequest.getFileName(), uploadRequest.getContent());
-        return request.toString();
-    }
-
     private void appendOverwriteBehaviorIfNeeded(UriComponentsBuilder builder, OverwriteBehavior overwriteBehavior) {
         switch (overwriteBehavior) {
             case OVERWRITE:
@@ -202,19 +214,4 @@ public class UploadServiceImpl extends AbstractDsmServiceImpl implements UploadS
         }
     }
 
-    private void appendFileParameter(StringBuilder request, String fileName, byte[] fileContent) {
-        request
-                .append(DELIMITER)
-                .append(CRLF)
-                .append(String.format("Content-Disposition: form-data; name=\"file\"; filename=\"%s\"", fileName))
-                .append(CRLF)
-                .append("Content-Type: application/octet-stream")
-                .append(CRLF)
-                .append(CRLF)
-                .append(new String(fileContent))
-                .append(CRLF)
-                .append(CRLF)
-                .append(DELIMITER)
-                .append("--");
-    }
 }
