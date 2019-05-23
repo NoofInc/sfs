@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noofinc.dsm.webapi.client.core.DsmWebapiResponse;
 import com.noofinc.dsm.webapi.client.core.authentication.AuthenticationHolder;
 import com.noofinc.dsm.webapi.client.filestation.exception.FileAlreadyExistsException;
+import com.noofinc.dsm.webapi.client.filestation.exception.FileNotFoundException;
 import com.noofinc.dsm.webapi.client.core.AbstractDsmServiceImpl;
 import com.noofinc.dsm.webapi.client.core.DsmUrlProvider;
 import com.noofinc.dsm.webapi.client.core.exception.DsmWebApiClientException;
@@ -104,6 +105,8 @@ public class UploadServiceImpl extends AbstractDsmServiceImpl implements UploadS
                     throw new FileAlreadyExistsException(response.getError(), uploadRequest.getParentFolderPath(), uploadRequest.getFileName());
                 case 414:
                     throw new FileAlreadyExistsException(response.getError(), uploadRequest.getParentFolderPath(), uploadRequest.getFileName());
+                case 408:
+                    throw new FileNotFoundException(uploadRequest.getParentFolderPath().toString(), response.getError());
                     // TODO handle other cases
             }
         }
@@ -114,7 +117,7 @@ public class UploadServiceImpl extends AbstractDsmServiceImpl implements UploadS
     public void uploadFtpFile(String parentPath, String name, byte[] content) {
         try {
             InputStream is = new ByteArrayInputStream(content);
-            ftp.storeFile(parentPath + name, is);
+            ftp.storeFile("/" + parentPath + "/" + name, is);
 
         } catch (IOException e) {
             throw new DsmWebApiClientException("Unable to upload file via FTP", e);
@@ -136,7 +139,7 @@ public class UploadServiceImpl extends AbstractDsmServiceImpl implements UploadS
             String request = createRequest(uploadRequest);
             LOGGER.debug("Upload Request Body: \n{}", request);
 
-            Response response = Request.Post(createUrl())
+            Response response = Request.Put(createUrl(uploadRequest))
                     .addHeader("Content-type", String.format("multipart/form-data, boundary=%s", DELIMITER.substring(2)))
                     .bodyByteArray(request.getBytes())
                     .execute();
@@ -148,36 +151,41 @@ public class UploadServiceImpl extends AbstractDsmServiceImpl implements UploadS
         }
     }
 
-    private String createUrl() {
-        return UriComponentsBuilder.fromHttpUrl(dsmUrlProvider.getDsmUrl())
+    private String createUrl(UploadRequest uploadRequest) {
+        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(dsmUrlProvider.getDsmUrl())
                 .path("/webapi/entry.cgi")
-                .toUriString();
+                .queryParam("api", getApiId())
+                .queryParam("version", "2")
+                .queryParam("method", "upload")
+                .queryParam("_sid", authenticationHolder.getLoginInformation().getSid())
+                .queryParam("path", uploadRequest.getParentFolderPath())
+                .queryParam("create_parents", Boolean.toString(uploadRequest.isCreateParents()));
+
+        appendOverwriteBehaviorIfNeeded(builder, uploadRequest.getOverwriteBehavior());
+        appendTimeParameterIfNeeded(builder, "mtime", uploadRequest.getLastModificationTime());
+        appendTimeParameterIfNeeded(builder, "crtime", uploadRequest.getCreationTime());
+        appendTimeParameterIfNeeded(builder, "atime", uploadRequest.getLastAccessTime());
+
+        String url = builder.toUriString();
+
+        LOGGER.debug("Upload Request URL: {}", url);
+
+        return url;
     }
 
     private String createRequest(UploadRequest uploadRequest) {
         StringBuilder request = new StringBuilder();
-        appendParameter(request, "api", getApiId());
-        appendParameter(request, "version", "2");
-        appendParameter(request, "method", "upload");
-        appendParameter(request, "overwrite", Boolean.toString(true));
-        appendParameter(request, "_sid", authenticationHolder.getLoginInformation().getSid());
-        appendParameter(request, "path", uploadRequest.getParentFolderPath());
-        appendParameter(request, "create_parents", Boolean.toString(uploadRequest.isCreateParents()));
-        appendOverwriteBehaviorIfNeeded(request, uploadRequest.getOverwriteBehavior());
-        appendTimeParameterIfNeeded(request, "mtime", uploadRequest.getLastModificationTime());
-        appendTimeParameterIfNeeded(request, "crtime", uploadRequest.getCreationTime());
-        appendTimeParameterIfNeeded(request, "atime", uploadRequest.getLastAccessTime());
         appendFileParameter(request, uploadRequest.getFileName(), uploadRequest.getContent());
         return request.toString();
     }
 
-    private void appendOverwriteBehaviorIfNeeded(StringBuilder request, OverwriteBehavior overwriteBehavior) {
+    private void appendOverwriteBehaviorIfNeeded(UriComponentsBuilder builder, OverwriteBehavior overwriteBehavior) {
         switch (overwriteBehavior) {
             case OVERWRITE:
-                appendParameter(request, "overwrite", "true");
+                builder.queryParam("overwrite", "true");
                 break;
             case SKIP:
-                appendParameter(request, "overwrite", "true");
+                builder.queryParam("overwrite", "false");
                 break;
             case ERROR:
                 // Default behavior: no parameter to add
@@ -187,21 +195,11 @@ public class UploadServiceImpl extends AbstractDsmServiceImpl implements UploadS
         }
     }
 
-    private void appendTimeParameterIfNeeded(StringBuilder request, String parameterName, Optional<LocalDateTime> time) {
+    private void appendTimeParameterIfNeeded(UriComponentsBuilder builder, String parameterName, Optional<LocalDateTime> time) {
         if(time.isPresent()) {
             long unixTime = time.get().toEpochSecond(timeZoneUtil.getZoneOffset()) * 1000;
-            appendParameter(request, parameterName, Long.toString(unixTime));
+            builder.queryParam(parameterName, Long.toString(unixTime));
         }
-    }
-
-    private void appendParameter(StringBuilder request, String parameterName, String parameterValue) {
-        request
-                .append(DELIMITER)
-                .append(CRLF)
-                .append(String.format("Content-Disposition: form-data; name=\"%s\"", parameterName))
-                .append(CRLF)
-                .append(parameterValue)
-                .append(CRLF);
     }
 
     private void appendFileParameter(StringBuilder request, String fileName, byte[] fileContent) {
