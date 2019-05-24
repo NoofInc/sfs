@@ -1,5 +1,13 @@
 package com.noofinc.dsm.webapi.client.filestation.upload;
 
+import static org.junit.Assert.*;
+
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
+import java.time.LocalDateTime;
+
 import com.noofinc.dsm.webapi.client.AbstractTest;
 import com.noofinc.dsm.webapi.client.filestation.common.OverwriteBehavior;
 import com.noofinc.dsm.webapi.client.filestation.exception.FileAlreadyExistsException;
@@ -8,25 +16,26 @@ import org.apache.commons.io.FileUtils;
 import org.junit.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
-import static org.junit.Assert.*;
-
-import java.io.File;
-import java.io.IOException;
-import java.io.UnsupportedEncodingException;
-import java.time.LocalDateTime;
-
 public class UploadServiceTest extends AbstractTest {
 
     @Autowired
     private UploadService uploadService;
 
+    private final ClassLoader classLoader = getClass().getClassLoader();
+
+    private final String fileName = "test-file.txt";
+
+    private final String originalContent = "this is a test file with string content\nHelloWorld!\n";
+
+    private final String newContent = "this is a test file with new content\nHelloWorld!\n";
+
     @Test
     public void testUpload() throws Exception {
-        String fileName = "test-file.txt";
         long currentTimeMillis = System.currentTimeMillis();
-        String originalContent = "this is a test file with strsing content\nHelloWorld!\n";
+        InputStream file = classLoader.getResourceAsStream("file-resources/upload-test/test-file.txt");
+
         UploadRequest uploadRequest = UploadRequest
-                .createBuilder("/noofinc-ws-it/createFiles" + currentTimeMillis, fileName, originalContent.getBytes("UTF-8"))
+                .createBuilder("/noofinc-ws-it/createFiles" + currentTimeMillis, fileName, file)
                 .createParents(true).creationTime(LocalDateTime.of(1984, 3, 9, 10, 0))
                 .lastAccessTime(LocalDateTime.of(1984, 3, 9, 10, 0))
                 .lastModificationTime(LocalDateTime.of(1984, 3, 9, 10, 0)).build();
@@ -50,11 +59,11 @@ public class UploadServiceTest extends AbstractTest {
 
     @Test
     public void testUploadOverwrite() throws UnsupportedEncodingException, IOException {
-        String fileName = "test-file.txt";
         long currentTimeMillis = System.currentTimeMillis();
-		String originalContent = "this is a test file with strsing content\nHelloWorld!\n";
+        InputStream file = classLoader.getResourceAsStream("file-resources/upload-test/test-file.txt");
+
         UploadRequest uploadRequest = UploadRequest
-                .createBuilder("/noofinc-ws-it/createFiles" + currentTimeMillis, fileName, originalContent.getBytes("UTF-8"))
+                .createBuilder("/noofinc-ws-it/createFiles" + currentTimeMillis, fileName, file)
                 .createParents(true)
                 .creationTime(LocalDateTime.of(1984, 3, 9, 10, 0))
                 .lastAccessTime(LocalDateTime.of(1984, 3, 9, 10, 0))
@@ -76,9 +85,10 @@ public class UploadServiceTest extends AbstractTest {
 
         long originalModified = f.lastModified();
 
-        String newContent = "New content!";
+        InputStream newFile = classLoader.getResourceAsStream("file-resources/upload-test/test-file2.txt");
+
         UploadRequest secondUploadRequest = UploadRequest
-                .createBuilder("/noofinc-ws-it/createFiles" + currentTimeMillis, fileName, newContent.getBytes("UTF-8"))
+                .createBuilder("/noofinc-ws-it/createFiles" + currentTimeMillis, fileName, newFile)
                 .createParents(true)
                 .overwriteBehavior(OverwriteBehavior.OVERWRITE)
                 .build();
@@ -94,11 +104,11 @@ public class UploadServiceTest extends AbstractTest {
 
     @Test
     public void testUploadOverwriteSkip() throws UnsupportedEncodingException, IOException {
-        String fileName = "test-file.txt";
         long currentTimeMillis = System.currentTimeMillis();
-		String originalContent = "this is a test file with strsing content\nHelloWorld!\n";
+        InputStream file = classLoader.getResourceAsStream("file-resources/upload-test/test-file.txt");
+
         UploadRequest uploadRequest = UploadRequest
-                .createBuilder("/noofinc-ws-it/createFiles" + currentTimeMillis, fileName, originalContent.getBytes("UTF-8"))
+                .createBuilder("/noofinc-ws-it/createFiles" + currentTimeMillis, fileName, file)
                 .createParents(true)
                 .creationTime(LocalDateTime.of(1984, 3, 9, 10, 0))
                 .lastAccessTime(LocalDateTime.of(1984, 3, 9, 10, 0))
@@ -120,9 +130,10 @@ public class UploadServiceTest extends AbstractTest {
 
         long originalModified = f.lastModified();
 
-        String newContent = "New content!";
+        InputStream newFile = classLoader.getResourceAsStream("file-resources/upload-test/test-file2.txt");
+
         UploadRequest secondUploadRequest = UploadRequest
-                .createBuilder("/noofinc-ws-it/createFiles" + currentTimeMillis, fileName, newContent.getBytes("UTF-8"))
+                .createBuilder("/noofinc-ws-it/createFiles" + currentTimeMillis, fileName, newFile)
                 .createParents(true)
                 .overwriteBehavior(OverwriteBehavior.SKIP)
                 .build();
@@ -138,11 +149,11 @@ public class UploadServiceTest extends AbstractTest {
 
     @Test(expected = FileAlreadyExistsException.class)
     public void testUploadOverwriteError() throws UnsupportedEncodingException, IOException {
-        String fileName = "test-file.txt";
         long currentTimeMillis = System.currentTimeMillis();
-		String originalContent = "this is a test file with strsing content\nHelloWorld!\n";
+        InputStream file = classLoader.getResourceAsStream("file-resources/upload-test/test-file.txt");
+
         UploadRequest uploadRequest = UploadRequest
-                .createBuilder("/noofinc-ws-it/createFiles" + currentTimeMillis, fileName, originalContent.getBytes("UTF-8"))
+                .createBuilder("/noofinc-ws-it/createFiles" + currentTimeMillis, fileName, file)
                 .createParents(true)
                 .creationTime(LocalDateTime.of(1984, 3, 9, 10, 0))
                 .lastAccessTime(LocalDateTime.of(1984, 3, 9, 10, 0))
@@ -162,44 +173,12 @@ public class UploadServiceTest extends AbstractTest {
         assertFalse(f.isDirectory());
         assertEquals(originalContent, FileUtils.readFileToString(f));
 
-        String newContent = "New content!";
+        InputStream newFile = classLoader.getResourceAsStream("file-resources/upload-test/test-file2.txt");
+
         UploadRequest secondUploadRequest = UploadRequest
-                .createBuilder("/noofinc-ws-it/createFiles" + currentTimeMillis, fileName, newContent.getBytes("UTF-8"))
+                .createBuilder("/noofinc-ws-it/createFiles" + currentTimeMillis, fileName, newFile)
                 .createParents(true)
                 .build();
         uploadService.uploadFile(secondUploadRequest);
-    }
-
-    @Test
-    public void testFtpUpload() {
-        String fileName = "uploadTestFileFtp.txt";
-        uploadService.uploadFtpFile("/noofinc-ws-it", fileName, "Upload testFtpUpload file contents".getBytes());
-
-
-        File f = new File(getShareMountPoint() + "/" + fileName);
-        int seconds = 0;
-        //check for existence up to 10 sec
-        while (!f.exists()  && seconds < 10) {
-            try { Thread.sleep(1000L); } catch (InterruptedException e) { }
-            seconds++;
-        }
-        assertTrue(f.exists());
-        assertFalse(f.isDirectory());
-    }
-
-    @Test
-    public void testUploadFileWithFtpFailOver() {
-        String fileName = "uploadTestFileFtpFailover.txt";
-        uploadService.uploadFileWithFtpFailOver("/noofinc-ws-it", fileName, "Upload testUploadFileWithFtpFailOver file contents".getBytes());
-
-        File f = new File(getShareMountPoint() + "/" + fileName);
-        int seconds = 0;
-        //check for existence up to 10 sec
-        while (!f.exists()  && seconds < 10) {
-            try { Thread.sleep(1000L); } catch (InterruptedException e) { }
-            seconds++;
-        }
-        assertTrue(f.exists());
-        assertFalse(f.isDirectory());
     }
 }

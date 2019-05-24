@@ -18,7 +18,7 @@ public class FileListServiceTest extends AbstractTest {
     @Test
     public void testList() throws Exception {
         List<File> list = fileListService.list("/noofinc-ws-it");
-        Assert.assertEquals(3, list.size());
+        Assert.assertEquals(4, list.size());
     }
 
     @Test

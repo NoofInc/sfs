@@ -2,31 +2,31 @@ package com.noofinc.dsm.webapi.client.filestation.upload;
 
 import com.noofinc.dsm.webapi.client.filestation.common.OverwriteBehavior;
 
+import java.io.InputStream;
 import java.time.LocalDateTime;
-import java.util.Arrays;
 import java.util.Optional;
 
 public class UploadRequest {
 
     private String parentFolderPath;
     private String fileName;
-    private byte[] content;
+    private InputStream content;
     private OverwriteBehavior overwriteBehavior = OverwriteBehavior.ERROR;
     private boolean createParents = false;
     private Optional<LocalDateTime> lastModificationTime = Optional.empty();
     private Optional<LocalDateTime> creationTime = Optional.empty();
     private Optional<LocalDateTime> lastAccessTime = Optional.empty();
 
-    private UploadRequest(String parentFolderPath, String fileName, byte[] content) {
+    private UploadRequest(String parentFolderPath, String fileName, InputStream content) {
         this.parentFolderPath = parentFolderPath;
         this.fileName = fileName;
-        this.content = Arrays.copyOf(content, content.length);
+        this.content = content;
     }
 
     private UploadRequest(UploadRequest uploadRequest) {
         this.parentFolderPath = uploadRequest.getParentFolderPath();
         this.fileName = uploadRequest.getFileName();
-        this.content = Arrays.copyOf(uploadRequest.getContent(), uploadRequest.getContent().length);
+        this.content = uploadRequest.getContent();
         this.overwriteBehavior = uploadRequest.getOverwriteBehavior();
         this.createParents = uploadRequest.isCreateParents();
         this.lastAccessTime = uploadRequest.getLastAccessTime();
@@ -42,8 +42,8 @@ public class UploadRequest {
         return fileName;
     }
 
-    public byte[] getContent() {
-        return Arrays.copyOf(content, content.length);
+    public InputStream getContent() {
+        return content;
     }
 
     public OverwriteBehavior getOverwriteBehavior() {
@@ -66,7 +66,7 @@ public class UploadRequest {
         return lastAccessTime;
     }
 
-    public static UploadRequestBuilder createBuilder(String parentFolderPath, String fileName, byte[] content) {
+    public static UploadRequestBuilder createBuilder(String parentFolderPath, String fileName, InputStream content) {
         return new UploadRequestBuilder(parentFolderPath, fileName, content);
     }
 
@@ -74,7 +74,7 @@ public class UploadRequest {
 
         private UploadRequest template;
 
-        private UploadRequestBuilder(String parentFolderPath, String fileName, byte[] content) {
+        private UploadRequestBuilder(String parentFolderPath, String fileName, InputStream content) {
             this.template = new UploadRequest(parentFolderPath, fileName, content);
         }
 

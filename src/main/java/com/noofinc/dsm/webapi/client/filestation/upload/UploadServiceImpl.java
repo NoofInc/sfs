@@ -1,98 +1,76 @@
 package com.noofinc.dsm.webapi.client.filestation.upload;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.noofinc.dsm.webapi.client.core.DsmWebapiResponse;
-import com.noofinc.dsm.webapi.client.core.authentication.AuthenticationHolder;
-import com.noofinc.dsm.webapi.client.filestation.exception.FileAlreadyExistsException;
-import com.noofinc.dsm.webapi.client.filestation.exception.FileNotFoundException;
-import com.noofinc.dsm.webapi.client.core.AbstractDsmServiceImpl;
-import com.noofinc.dsm.webapi.client.core.DsmUrlProvider;
-import com.noofinc.dsm.webapi.client.core.exception.DsmWebApiClientException;
-import com.noofinc.dsm.webapi.client.filestation.common.OverwriteBehavior;
-import com.noofinc.dsm.webapi.client.core.timezone.TimeZoneUtil;
-import org.apache.commons.net.ftp.FTP;
-import org.apache.commons.net.ftp.FTPClient;
-import org.apache.http.client.fluent.Content;
-import org.apache.http.client.fluent.Request;
-import org.apache.http.client.fluent.Response;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
-import org.springframework.web.util.UriComponentsBuilder;
-
-import javax.annotation.PostConstruct;
-import javax.annotation.PreDestroy;
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
-/**
- * Could not succeed to implement this with RestTemplate
- * Implemented with Apache's HttpClient and Jackson's object mapper
- */
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.noofinc.dsm.webapi.client.core.AbstractDsmServiceImpl;
+import com.noofinc.dsm.webapi.client.core.DsmWebapiRequest;
+import com.noofinc.dsm.webapi.client.core.DsmWebapiResponse;
+import com.noofinc.dsm.webapi.client.core.exception.DsmWebApiClientException;
+import com.noofinc.dsm.webapi.client.core.timezone.TimeZoneUtil;
+import com.noofinc.dsm.webapi.client.filestation.common.OverwriteBehavior;
+import com.noofinc.dsm.webapi.client.filestation.exception.FileAlreadyExistsException;
+import com.noofinc.dsm.webapi.client.filestation.exception.FileNotFoundException;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Component;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.RestTemplate;
+
 @Component
 public class UploadServiceImpl extends AbstractDsmServiceImpl implements UploadService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(UploadServiceImpl.class);
 
+    // API Infos
     private static final String API_ID = "SYNO.FileStation.Upload";
+    private static final String API_VERSION = "2";
 
-    private static final String DELIMITER = "--AaB03x";
-    private static final String CRLF = "\r\n";
+    // API Methods
+    private static final String METHOD_UPLOAD = "upload";
 
-    @Value("${dsm.webapi.username}")
-    private String username;
-    @Value("${dsm.webapi.password}")
-    private String password;
-    @Value("${dsm.webapi.host}")
-    private String host;
+    // Parameters
+    private static final String PARAMETER_PATH = "path";
+    private static final String PARAMETER_CREATE_PARENTS = "create_parents";
+    private static final String PARAMETER_OVERWRITE = "overwrite";
+    private static final String PARAMETER_MODIFIED_TIME = "mtime";
+    private static final String PARAMETER_CREATED_TIME = "crtime";
+    private static final String PARAMETER_ACCESSED_TIME = "atime";
 
-    @Autowired
-    private DsmUrlProvider dsmUrlProvider;
-
-    @Autowired
-    private AuthenticationHolder authenticationHolder;
-
+    // Parameters values
+    private static final String PARAMETER_VALUE_OVERWRITE = "true";
+    private static final String PARAMETER_VALUE_SKIP = "false";
+    
     @Autowired
     private TimeZoneUtil timeZoneUtil;
 
     @Autowired
     private ObjectMapper objectMapper;
 
-    FTPClient ftp = new FTPClient();
+    @Autowired
+    @Qualifier("uploadRestTemplate")
+    private RestTemplate restTemplate;
 
     public UploadServiceImpl() {
         super(API_ID);
     }
 
-    @PostConstruct
-    public void initUploadService() {
-        try {
-            ftp.connect(this.host);
-            ftp.login(this.username, this.password);
-            ftp.setFileType(FTP.BINARY_FILE_TYPE);
-            ftp.enterLocalPassiveMode();
-        } catch (IOException e) {
-            LOGGER.warn("Could not connect to ftp server.", e);
-        }
-    }
-
-    @PreDestroy
-    public void destroy() {
-        try {
-            ftp.logout();
-            ftp.disconnect();
-        } catch (IOException ioe) {
-            //try to disconnect but eat it if fail
-        }
-    }
-
     @Override
-    public void uploadFile(String parentPath, String name, byte[] content) {
+    public void uploadFile(String parentPath, String name, InputStream content) {
         uploadFile(UploadRequest.createBuilder(parentPath, name, content).build());
     }
 
@@ -112,109 +90,68 @@ public class UploadServiceImpl extends AbstractDsmServiceImpl implements UploadS
         }
     }
 
-
-    @Override
-    public void uploadFtpFile(String parentPath, String name, byte[] content) {
-        try {
-            InputStream is = new ByteArrayInputStream(content);
-            ftp.storeFile("/" + parentPath + "/" + name, is);
-
-        } catch (IOException e) {
-            throw new DsmWebApiClientException("Unable to upload file via FTP", e);
-        }
-    }
-
-    @Override
-    public void uploadFileWithFtpFailOver(String parentPath, String name, byte[] content) {
-        try {
-            uploadFile(parentPath, name, content);
-        } catch (Exception e) {
-            LOGGER.info("RESTful file upload failed, attempting via FTP");
-            uploadFtpFile(parentPath, name, content);
-        }
-    }
-
     private DsmWebapiResponse doUploadRequest(UploadRequest uploadRequest) {
-        try {
-            String request = createRequest(uploadRequest);
-            LOGGER.debug("Upload Request Body: \n{}", request);
+        try {            
+            Resource content = new InputStreamResource(uploadRequest.getContent());
+            HttpHeaders fileHeaders = new HttpHeaders();
+            fileHeaders.setContentDispositionFormData("file", uploadRequest.getFileName());
 
-            Response response = Request.Put(createUrl(uploadRequest))
-                    .addHeader("Content-type", String.format("multipart/form-data, boundary=%s", DELIMITER.substring(2)))
-                    .bodyByteArray(request.getBytes())
-                    .execute();
-                Content content = response.returnContent();
-                LOGGER.debug("Response body: {}", content.asString());
-                return objectMapper.readValue(content.asBytes(), DsmWebapiResponse.class);
-        } catch (IOException e) {
+            HttpEntity<Resource> fileEntity = new HttpEntity<>(content, fileHeaders);
+
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            body.add("file", fileEntity);
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+            HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+
+            ResponseEntity<DsmWebapiResponse> response = restTemplate.exchange(createUri(uploadRequest), HttpMethod.PUT, requestEntity, DsmWebapiResponse.class);
+            
+            LOGGER.debug("Response body: {}", objectMapper.writeValueAsString(response.getBody()));
+
+            return response.getBody();
+
+        } catch (Exception e) {
             throw new DsmWebApiClientException("Could not upload file.", e);
         }
     }
 
-    private String createUrl(UploadRequest uploadRequest) {
-        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(dsmUrlProvider.getDsmUrl())
-                .path("/webapi/entry.cgi")
-                .queryParam("api", getApiId())
-                .queryParam("version", "2")
-                .queryParam("method", "upload")
-                .queryParam("_sid", authenticationHolder.getLoginInformation().getSid())
-                .queryParam("path", uploadRequest.getParentFolderPath())
-                .queryParam("create_parents", Boolean.toString(uploadRequest.isCreateParents()));
+    private URI createUri(UploadRequest uploadRequest) {
+        DsmWebapiRequest request = new DsmWebapiRequest(getApiInfo().getApi(), API_VERSION, getApiInfo().getPath(), METHOD_UPLOAD)
+                .parameter(PARAMETER_PATH, uploadRequest.getParentFolderPath())
+                .parameter(PARAMETER_CREATE_PARENTS, Boolean.toString(uploadRequest.isCreateParents()));
 
-        appendOverwriteBehaviorIfNeeded(builder, uploadRequest.getOverwriteBehavior());
-        appendTimeParameterIfNeeded(builder, "mtime", uploadRequest.getLastModificationTime());
-        appendTimeParameterIfNeeded(builder, "crtime", uploadRequest.getCreationTime());
-        appendTimeParameterIfNeeded(builder, "atime", uploadRequest.getLastAccessTime());
+        appendOverwriteBehaviorIfNeeded(request, uploadRequest.getOverwriteBehavior());
+        appendTimeParameterIfNeeded(request, PARAMETER_MODIFIED_TIME, uploadRequest.getLastModificationTime());
+        appendTimeParameterIfNeeded(request, PARAMETER_CREATED_TIME, uploadRequest.getCreationTime());
+        appendTimeParameterIfNeeded(request, PARAMETER_ACCESSED_TIME, uploadRequest.getLastAccessTime());
 
-        String url = builder.toUriString();
+        URI uri = getDsmWebapiClient().buildUri(request);
 
-        LOGGER.debug("Upload Request URL: {}", url);
+        LOGGER.debug("Upload Request URI: {}", uri);
 
-        return url;
+        return uri;
     }
 
-    private String createRequest(UploadRequest uploadRequest) {
-        StringBuilder request = new StringBuilder();
-        appendFileParameter(request, uploadRequest.getFileName(), uploadRequest.getContent());
-        return request.toString();
-    }
-
-    private void appendOverwriteBehaviorIfNeeded(UriComponentsBuilder builder, OverwriteBehavior overwriteBehavior) {
+    private void appendOverwriteBehaviorIfNeeded(DsmWebapiRequest request, OverwriteBehavior overwriteBehavior) {
         switch (overwriteBehavior) {
             case OVERWRITE:
-                builder.queryParam("overwrite", "true");
+                request.parameter(PARAMETER_OVERWRITE, PARAMETER_VALUE_OVERWRITE);
                 break;
             case SKIP:
-                builder.queryParam("overwrite", "false");
+                request.parameter(PARAMETER_OVERWRITE, PARAMETER_VALUE_SKIP);
                 break;
             case ERROR:
                 // Default behavior: no parameter to add
                 break;
-            default:
-                throw new AssertionError("Cannot happen");
         }
     }
 
-    private void appendTimeParameterIfNeeded(UriComponentsBuilder builder, String parameterName, Optional<LocalDateTime> time) {
+    private void appendTimeParameterIfNeeded(DsmWebapiRequest request, String parameterName, Optional<LocalDateTime> time) {
         if(time.isPresent()) {
             long unixTime = time.get().toEpochSecond(timeZoneUtil.getZoneOffset()) * 1000;
-            builder.queryParam(parameterName, Long.toString(unixTime));
+            request.parameter(parameterName, Long.toString(unixTime));
         }
     }
 
-    private void appendFileParameter(StringBuilder request, String fileName, byte[] fileContent) {
-        request
-                .append(DELIMITER)
-                .append(CRLF)
-                .append(String.format("Content-Disposition: form-data; name=\"file\"; filename=\"%s\"", fileName))
-                .append(CRLF)
-                .append("Content-Type: application/octet-stream")
-                .append(CRLF)
-                .append(CRLF)
-                .append(new String(fileContent))
-                .append(CRLF)
-                .append(CRLF)
-                .append(DELIMITER)
-                .append("--");
-    }
 }
